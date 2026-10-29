@@ -1,0 +1,4 @@
+/* The WebGL canvas sits below the transparent camera stage. */
+.camera-stage { background: transparent; }
+:root { font-family: 'Noto Sans SC Variable', 'Microsoft YaHei', system-ui, sans-serif; }
+.field-error { display: block; margin-top: 7px; color: #ff9285; font-size: 10px; }
