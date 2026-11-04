@@ -8,7 +8,7 @@ test('离线页面加载、参数交互、配置往返及导出', async ({ page,
   const allowedOrigin = new URL(process.env.TEST_BASE_URL ?? 'http://127.0.0.1:4173').origin;
   page.on('pageerror', e => errors.push(e.message));
   page.on('response', response => { if (response.status() >= 400) failed.push(`${response.status()} ${response.url()}`); });
-  const isExternal = (address: string) => {
+  const isExternal = (address: string | URL) => {
     const url = new URL(address);
     return url.origin !== allowedOrigin && url.protocol !== 'data:' && url.protocol !== 'blob:';
   };
@@ -92,4 +92,20 @@ test('房间变化、4:3 裁切、手动角度和畸变恢复', async ({ page })
   const barrel = await shot(); expect(barrel.equals(baseline)).toBe(false); expect(barrel.equals(distorted)).toBe(false);
   await page.getByRole('switch', { name: '镜头畸变' }).click();
   const restored = await shot(); expect(restored.equals(baseline)).toBe(true);
+});
+
+test('4K 导出与低分辨率预览解耦', async ({ page }) => {
+  test.setTimeout(120000);
+  await page.goto('/'); await expect(page.getByText('写实人物已就绪')).toBeVisible({ timeout: 60000 });
+  await page.getByRole('button', { name: '输出', exact: false }).click();
+  await page.getByRole('button', { name: '4K UHD', exact: true }).click();
+  await expect(page.getByText('导出 3840 × 2160')).toBeVisible();
+  const box = await page.locator('[aria-label="摄像机画面视图"]').boundingBox();
+  expect(box!.width).toBeLessThan(1920);
+  expect(box!.height).toBeLessThan(1080);
+  const shot = page.waitForEvent('download'); await page.getByRole('button', { name: '导出截图' }).click();
+  const bytes = await fs.readFile((await (await shot).path())!);
+  expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+  expect(bytes.readUInt32BE(16)).toBe(3840); expect(bytes.readUInt32BE(20)).toBe(2160);
+  expect(bytes.length).toBeGreaterThan(100000);
 });

@@ -49,6 +49,7 @@ function App() {
   const host = useRef<HTMLDivElement>(null), layout = useRef<HTMLDivElement>(null), cameraView = useRef<HTMLDivElement>(null), stage = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [fieldRevision, setFieldRevision] = useState(0);
+  const [exporting, setExporting] = useState(false);
   const simulation = useRef<Simulation | null>(null), fileInput = useRef<HTMLInputElement>(null);
   const initial = useRef(config);
   const o = useMemo(() => optics(config), [config]);
@@ -105,10 +106,18 @@ function App() {
     } catch (e) { setMessage(`加载失败：${e instanceof Error ? e.message : String(e)}`); }
   }
   async function screenshot() {
+    if (exporting) return;
+    setExporting(true);
     try {
       if (!simulation.current || model.error || !model.text.includes('已就绪')) throw new Error('人物或渲染器尚未就绪。');
-      download(await simulation.current.screenshot(), '摄像机画面.png'); setMessage('PNG 截图已导出。');
+      const { width, height } = config.output;
+      setMessage(`正在渲染 ${width} × ${height} PNG…`);
+      // Let the status text paint before the synchronous high-resolution render.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      download(await simulation.current.screenshot(), '摄像机画面.png');
+      setMessage(`PNG 截图已导出（${width} × ${height}）。`);
     } catch (e) { setMessage(`截图失败：${e instanceof Error ? e.message : String(e)}`); }
+    finally { setExporting(false); }
   }
   const section = (name: typeof active, label: string, icon: string) => <button className={`tab ${active === name ? 'selected' : ''}`} onClick={() => setActive(name)}><span>{icon}</span>{label}</button>;
   const field = (group: NumericGroup, key: string, label: string, unit: string, min: number, max: number, step: number, help?: string, integer?: boolean) => <Field label={label} unit={unit} value={(config[group] as unknown as Record<string, number>)[key]} min={min} max={max} step={step} help={help} integer={integer} onChange={v => setNumber(group, key, v)} />;
@@ -147,10 +156,10 @@ function App() {
             <div className="separator" /><div className="switch-row"><div><b>镜头畸变</b><small>简化径向模型，非实测标定</small></div><button role="switch" aria-label="镜头畸变" aria-checked={config.distortion.enabled} className={`switch ${config.distortion.enabled ? 'on' : ''}`} onClick={() => setDistortion('enabled', !config.distortion.enabled)}><span /></button></div>
             <Field label="径向畸变 k1" value={config.distortion.k1} min={-0.35} max={0.35} step={0.005} onChange={v => setDistortion('k1', v)} help="负值桶形，正值枕形；采样越界显示黑边。" />
           </>}
-          {active === 'output' && <><div className="control-title"><h3>输出设置</h3><p>输出像素与传感器有效像素独立设置。</p></div>
-            {field('output', 'width', '输出宽度', 'px', 256, 4096, 1, undefined, true)}{field('output', 'height', '输出高度', 'px', 256, 4096, 1, undefined, true)}
-            <div className="presets"><span>常用比例</span><button onClick={() => { const n = cloneConfig(config); n.output = { width: 1920, height: 1080 }; apply(n); }}>16:9</button><button onClick={() => { const n = cloneConfig(config); n.output = { width: 1600, height: 1200 }; apply(n); }}>4:3</button><button onClick={() => { const n = cloneConfig(config); n.output = { width: 1080, height: 1080 }; apply(n); }}>1:1</button></div>
-            <div className="note"><b>中心裁切</b> 输出比例不同时裁切有效成像区域，不拉伸画面。截图为所设输出像素，受 GPU 尺寸限制。</div>
+          {active === 'output' && <><div className="control-title"><h3>输出设置</h3><p>预览随窗口自适应；导出截图按下方分辨率单独离线渲染。</p></div>
+            {field('output', 'width', '导出宽度', 'px', 256, 4096, 1, undefined, true)}{field('output', 'height', '导出高度', 'px', 256, 4096, 1, undefined, true)}
+            <div className="presets"><span>导出分辨率</span><button onClick={() => { const n = cloneConfig(config); n.output = { width: 1920, height: 1080 }; apply(n); }}>1080P</button><button onClick={() => { const n = cloneConfig(config); n.output = { width: 3840, height: 2160 }; apply(n); }}>4K UHD</button><button onClick={() => { const n = cloneConfig(config); n.output = { width: 1600, height: 1200 }; apply(n); }}>4:3</button><button onClick={() => { const n = cloneConfig(config); n.output = { width: 1080, height: 1080 }; apply(n); }}>1:1</button></div>
+            <div className="note"><b>预览与导出分离</b> 预览分辨率只影响实时画面；导出的 PNG 使用上方像素尺寸，不受窗口大小影响。4K 导出在集成显卡上可能需要数秒。<br /><br /><b>中心裁切</b> 输出比例不同时裁切有效成像区域，不拉伸画面；导出尺寸受 GPU 渲染缓冲上限限制。</div>
           </>}
         </div>
         <div className="sidebar-footer"><span className="dot" />参数修改即时生效 <span>v1.0</span></div>
@@ -164,7 +173,7 @@ function App() {
             <div className="view-foot"><span><i className="legend-line" /> 无畸变视锥（显示至 5 m）</span><span>网格间距约 1 m</span></div>
           </section>
           <section className="view-card"><div className="view-head"><div><span className="view-icon">◉</span><div><b>摄像机画面</b><small>CAMERA PREVIEW</small></div></div><span className="live-label"><i /> LIVE</span></div>
-            <div className="camera-stage" ref={stage}><div className="view-surface camera-surface" ref={cameraView} style={{ width: Math.min(stageSize.width, stageSize.height * o.aspect), height: Math.min(stageSize.height, stageSize.width / o.aspect) }} aria-label="摄像机画面视图"><div className="view-overlay top-left"><span className="rec-dot" /> CAM 01</div><div className="view-overlay bottom-right">{config.output.width} × {config.output.height}</div></div></div>
+            <div className="camera-stage" ref={stage}><div className="view-surface camera-surface" ref={cameraView} style={{ width: Math.min(stageSize.width, stageSize.height * o.aspect), height: Math.min(stageSize.height, stageSize.width / o.aspect) }} aria-label="摄像机画面视图"><div className="view-overlay top-left"><span className="rec-dot" /> CAM 01 · 预览</div><div className="view-overlay bottom-right">导出 {config.output.width} × {config.output.height}</div></div></div>
             <div className="view-foot"><span><i className="legend-circle" /> {config.distortion.enabled ? `畸变开启 · k1 ${config.distortion.k1}` : '无畸变透视'}</span><span>画面比例 {pretty(o.aspect, 2)}:1</span></div>
           </section>
         </div>
@@ -194,7 +203,7 @@ function App() {
           <button onClick={() => download(new Blob([JSON.stringify(config, null, 2) + '\n'], { type: 'application/json' }), '摄像机配置.json')}>↓ 保存配置</button>
           <button onClick={() => fileInput.current?.click()}>↑ 加载配置</button><input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={e => { const file = e.target.files?.[0]; if (file) void loadFile(file); e.target.value = ''; }} />
           <button onClick={() => download(new Blob([summary(config, `${assessment.framing}；${assessment.occlusion}`)], { type: 'text/plain;charset=utf-8' }), '摄像机参数摘要.txt')}>≡ 参数摘要</button>
-          <button className="primary" onClick={() => void screenshot()}>▣ 导出截图</button>
+          <button className="primary" disabled={exporting} onClick={() => void screenshot()} title={`按 ${config.output.width} × ${config.output.height} 导出 PNG`}>{exporting ? '正在导出…' : '▣ 导出截图'}</button>
         </div></div>
         <div className="notices" aria-live="polite"><div className={model.error ? 'error' : ''}>{model.text}</div>{message && <div>{message}</div>}{warnings.map(w => <div className="warning" key={w}>⚠ {w}</div>)}<p>入画为保守包围盒判断，临界及畸变时可能不确定；占比不扣除遮挡。遮挡仅测试 4 个中心点，未发现遮挡不等于无遮挡。视锥不含畸变黑边。未模拟真实镜头标定、ISP、噪声、动态范围、景深及自动曝光/白平衡。</p></div>
       </div>

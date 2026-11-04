@@ -7,7 +7,7 @@
 ## 环境和离线范围
 
 - 目标：Windows 10/11 或 Linux 桌面，近期 Chrome / Edge，启用 WebGL 2。**实际测试覆盖情况见下方“验证记录”**。
-- 建议：8 GB 内存以上（推荐 16 GB），支持 WebGL 2 的独立或集成 GPU。人物纹理随项目优化为 3072 × 3072；浏览器和显卡支持的纹理尺寸、显存和驱动会影响速度及画面。截屏大小受 GPU 最大纹理/渲染缓冲大小限制。
+- 建议：8 GB 内存以上（推荐 16 GB），支持 WebGL 2 的独立或集成 GPU。人物纹理随项目优化为 3072 × 3072；浏览器和显卡支持的纹理尺寸、显存和驱动会影响速度及画面。预览按面板尺寸自适应渲染；导出 PNG 按“输出”分辨率单独离线渲染，默认 1080P，可选 4K UHD。截屏大小受 GPU 最大纹理/渲染缓冲大小限制。
 - 源码方式：需要已安装 Node.js 18.18+（推荐 20 LTS）及 npm；首次执行 `npm ci` 需要网络获取锁定依赖，安装完成后启动、构建和操作均不需要互联网。
 - **预构建静态包**：`dist/` 内含全部运行资源。复制到目标机器后使用本机静态文件服务访问即可，不需要 Node.js/npm 或互联网。目标机器须已有浏览器及静态服务程序。没有随包提供操作系统、浏览器或 Python 的离线安装文件，因此**不声称从裸机开始完全离线安装**。
 - 当前构建的压缩分发包为 `release/camera-simulation-static.zip`；它与 `dist/` 都是生成产物，不进入 Git。重新构建后需重新打包。
@@ -26,6 +26,25 @@ npm run test           # 自动化计算和配置测试
 ```
 
 以上命令在 Windows PowerShell 和 Linux shell 均可使用。配置文件和截图通过浏览器下载到本机。
+
+### 部署到网页
+
+在能通过 SSH 免密登录目标服务器的 Linux/WSL 环境执行：
+
+```bash
+npm run deploy
+```
+
+脚本会构建、备份线上目录、同步 `dist/`、规范权限，并检查首页、JS/CSS 及人物模型是否可访问。默认目标是 `https://camera-simulation.li.qinxing.xyz/`；可用环境变量覆盖：
+
+```bash
+DEPLOY_HOST=root@server \
+DEPLOY_PATH=/srv/camera-simulation \
+DEPLOY_URL=https://example.com/ \
+npm run deploy
+```
+
+`npm run deploy -- --skip-build` 跳过构建；`npm run deploy -- --prune` 会让线上目录与 `dist/` 完全一致，删除不在 `dist/` 中的文件（执行前仍会先备份）。部署脚本需要 `bash`、`ssh`、`rsync`、`curl` 和 `md5sum`。
 
 ### 不安装 Node.js 使用预构建静态包
 
@@ -46,6 +65,8 @@ Windows 上也可用 `py -3 -m http.server 8080 --bind 127.0.0.1`，Linux 常用
 房间默认 5 × 4 × 2.8 m；会议桌固定 2.2 × 1.2 × 0.75 m、四把椅子固定排列，不随房间缩放。房间过小时提示但不自动重排；家具与人物可能重叠、遮挡或出界。布局视图隐藏观察方向上靠近观察相机的墙，显示远侧墙和房间线框，网格间隔约 1 m；摄像机画面显示完整墙面。布局视锥使用当前中心裁切后的无畸变投影，显示长度截断在 5 m，实际相机远裁剪面为 100 m。
 
 右下“保存配置”生成 JSON；“加载配置”在完整校验成功后一次性恢复；“参数摘要”生成 UTF-8 文本；“导出截图”按当前输出分辨率生成 PNG，包含畸变但不含布局辅助线。所有这些操作均在浏览器本地完成。
+
+预览和导出使用同一相机投影，但分辨率独立：预览按面板尺寸 × 设备像素比（上限 1.5）实时渲染；导出时按“输出”中的像素尺寸创建独立离屏缓冲，1080P 使用 4× MSAA，4K 使用 2× MSAA，并临时把阴影贴图提升到 2048，导出完成后恢复预览设置。4K 导出在集成显卡上可能需要数秒。
 
 ## 成像计算和畸变
 
@@ -73,7 +94,17 @@ Windows 上也可用 `py -3 -m http.server 8080 --bind 127.0.0.1`，Linux 常用
 - `npm run build` 成功；`npm run test` 的 10 项测试通过，覆盖样例数值、焦距/FOV 互逆、中心裁切、Three.js 投影、距离、水平朝向与校验。
 - 两项浏览器端测试通过：模型及离线字体加载、参数交互、4:3 画面比例、手动角度保持、人物画外、焦距与 FOV 互改、人物距离和占比、配置保存/加载、PNG 像素尺寸、摘要导出、桶形/枕形与关闭畸变后的 PNG 一致性。
 - 对 `release/camera-simulation-static.zip` 解压后使用 Python 本地服务、浏览器新会话运行测试，并阻断非本机请求；记录到的外部请求为零，本地资源无 HTTP 错误。该测试模拟了离线访问，**不是在操作系统断网状态下进行的物理隔离测试**。
-- 压缩模型版已部署至 `https://camera-simulation.qinxing.xyz/`，在公网 Chromium Headless 下两项浏览器测试通过；测试中未发现第三方请求。公网访问速度受客户端网络影响，首次需要下载约 2.7 MB 的人物资源。
+- 压缩模型版已部署至 `https://camera-simulation.li.qinxing.xyz/`，在公网 Chromium Headless 下浏览器测试通过；测试中未发现第三方请求。公网访问速度受客户端网络影响，首次需要下载约 2.7 MB 的人物资源。
 - 已检查软件渲染的默认画面和人物外观；尚未在 Windows 10/11、桌面版 Chrome/Edge、真实 GPU、其他屏幕尺寸上完成手工验收，也未做性能基准。目标平台支持仍需在目标设备上复验。
 
-浏览器测试需要额外安装 Playwright Chromium（`npx playwright install --only-shell chromium`）及系统浏览器依赖；它们不属于应用运行时，首次安装需要网络。测试机缺少 `libasound.so.2` 时，可安装系统相应包后重试；本次测试使用临时目录中的该库，没有修改系统安装。
+2026-11-04 在相同环境补充验证预览/导出分辨率和抗锯齿改动：
+
+- 相机离屏渲染启用 MSAA：预览 4×；导出 1080P 4×、4K 2×；导出时阴影贴图临时提升至 2048，导出后恢复 1024。
+- `npm run build` 成功；`npm run test` 的 10 项测试通过；`npm run test:e2e` 的 3 项浏览器测试通过。
+- 新增 4K UHD 导出用例：PNG 为 3840×2160，导出期间预览元素仍保持远低于 1080P 的窗口尺寸；默认 1080P 导出、畸变前后 PNG 一致性等原有用例保持通过。
+- 4K 导出在 SwiftShader 下约数秒完成；集成显卡上的实际耗时和显存占用仍需在目标设备上复验。
+- 测试环境缺少 `libasound.so.2`，本次使用临时 ALSA 存根让 Playwright Chromium 启动；存根不参与 WebGL/PNG 渲染，未修改系统安装。
+- 已通过 rsync 更新部署至 `https://camera-simulation.li.qinxing.xyz/`；公网 Chromium Headless 下 3 项浏览器测试通过（含 4K UHD 导出），部署前已备份服务器旧版本。
+- 新增 `npm run deploy` 部署脚本并验证：构建、备份、rsync、权限规范化及首页/资源 HTTP 校验均成功。
+
+浏览器测试需要额外安装 Playwright Chromium（`npx playwright install --only-shell chromium`）及系统浏览器依赖；它们不属于应用运行时，首次安装需要网络。测试机缺少 `libasound.so.2` 时，可安装系统相应包后重试；本项目验证使用临时库或 ALSA 存根，没有修改系统安装。

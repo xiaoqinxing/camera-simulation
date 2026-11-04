@@ -2,3 +2,5 @@
 .camera-stage { background: transparent; }
 :root { font-family: 'Noto Sans SC Variable', 'Microsoft YaHei', system-ui, sans-serif; }
 .field-error { display: block; margin-top: 7px; color: #ff9285; font-size: 10px; }
+.actions button:disabled { opacity: .6; cursor: wait; }
+.presets { flex-wrap: wrap; }

@@ -4,6 +4,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { Config, optics, personFacingAngle } from './core';
 
+const PREVIEW_SAMPLES = 4;
+const PREVIEW_SHADOW_SIZE = 1024;
+const EXPORT_SHADOW_SIZE = 2048;
+const FULL_HD_PIXELS = 1920 * 1080;
+
 export interface Assessment { framing: string; ratio: number | null; occlusion: string; }
 type Callbacks = { onAssessment: (a: Assessment) => void; onModel: (s: string, error?: boolean) => void };
 
@@ -69,7 +74,10 @@ export class Simulation {
     uniforms: { image: { value: null }, k1: { value: 0 }, planeSize: { value: new THREE.Vector2(1, 1) } },
     vertexShader: postVertex, fragmentShader: postFragment, depthTest: false, depthWrite: false,
   });
-  private target = new THREE.WebGLRenderTarget(16, 16, { depthBuffer: true });
+  // The camera view is rendered off-screen, so the canvas `antialias` flag does not apply to it.
+  // 4x MSAA is cheap for the small preview; export uses 2x at 4K to stay within integrated-GPU memory budgets.
+  private target = new THREE.WebGLRenderTarget(16, 16, { depthBuffer: true, samples: PREVIEW_SAMPLES });
+  private sun: THREE.DirectionalLight;
   private config: Config;
   private model: THREE.Object3D | null = null;
   private modelBox = new THREE.Box3();
@@ -98,13 +106,13 @@ export class Simulation {
     this.scene.background = new THREE.Color(0xdde4e3);
     this.scene.add(this.room, this.furniture, this.person, this.helpers);
     this.scene.add(new THREE.HemisphereLight(0xe7f6ff, 0x918b80, 2.15));
-    const sun = new THREE.DirectionalLight(0xfff0d7, 2.0);
-    sun.position.set(-3, 7, -2); sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.camera.left = -8; sun.shadow.camera.right = 8;
-    sun.shadow.camera.top = 8; sun.shadow.camera.bottom = -8;
-    sun.shadow.bias = -0.00015;
-    this.scene.add(sun);
+    this.sun = new THREE.DirectionalLight(0xfff0d7, 2.0);
+    this.sun.position.set(-3, 7, -2); this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(PREVIEW_SHADOW_SIZE, PREVIEW_SHADOW_SIZE);
+    this.sun.shadow.camera.left = -8; this.sun.shadow.camera.right = 8;
+    this.sun.shadow.camera.top = 8; this.sun.shadow.camera.bottom = -8;
+    this.sun.shadow.bias = -0.00015;
+    this.scene.add(this.sun);
     this.layoutCamera.position.set(7, 6.3, 8);
     this.layoutCamera.layers.enable(2);
     this.camera.layers.enable(1);
@@ -156,7 +164,18 @@ export class Simulation {
     }).then(data => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(data, '')).then(gltf => {
       if (this.stopped) return;
       this.model = gltf.scene;
-      this.model.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
+      const anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+      this.model.traverse(o => {
+        if (!(o instanceof THREE.Mesh)) return;
+        o.castShadow = true; o.receiveShadow = true;
+        const materials = Array.isArray(o.material) ? o.material : [o.material];
+        for (const material of materials) {
+          const standard = material as THREE.MeshStandardMaterial;
+          for (const texture of [standard.map, standard.normalMap, standard.roughnessMap, standard.metalnessMap, standard.aoMap, standard.emissiveMap]) {
+            if (texture) texture.anisotropy = anisotropy;
+          }
+        }
+      });
       this.model.updateMatrixWorld(true);
       this.modelBox.setFromObject(this.model);
       this.modelHeight = this.modelBox.max.y - this.modelBox.min.y;
@@ -297,12 +316,21 @@ export class Simulation {
     const h = this.host.getBoundingClientRect(), r = element.getBoundingClientRect();
     return { x: r.left - h.left, y: h.bottom - r.bottom, w: r.width, h: r.height };
   }
-  private renderCamera(w: number, h: number) {
-    this.target.setSize(Math.max(1, Math.floor(w)), Math.max(1, Math.floor(h)));
+  private setShadowQuality(size: number) {
+    const quality = Math.min(size, this.renderer.capabilities.maxTextureSize);
+    if (this.sun.shadow.mapSize.x === quality) return;
+    this.sun.shadow.mapSize.set(quality, quality);
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
+    this.sun.shadow.needsUpdate = true;
+  }
+  private renderCamera(w: number, h: number, target?: THREE.WebGLRenderTarget) {
+    const destination = target ?? this.target;
+    destination.setSize(Math.max(1, Math.floor(w)), Math.max(1, Math.floor(h)));
     this.renderer.setScissorTest(false);
-    this.renderer.setRenderTarget(this.target);
+    this.renderer.setRenderTarget(destination);
     this.renderer.clear(); this.renderer.render(this.scene, this.camera);
-    this.postMaterial.uniforms.image.value = this.target.texture;
+    this.postMaterial.uniforms.image.value = destination.texture;
     this.renderer.setRenderTarget(null);
   }
   private animate = () => {
@@ -332,10 +360,19 @@ export class Simulation {
     const gl = this.renderer.getContext();
     const max = Math.min(this.renderer.capabilities.maxTextureSize, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
     if (width > max || height > max) throw new Error(`当前 GPU 最大渲染尺寸为 ${max} 像素，无法导出该分辨率。`);
-    this.renderCamera(width, height);
+    // The export renders into its own target so the preview stays at window resolution.
+    // 4x MSAA up to 1080p; 2x above that (including 4K) keeps integrated-GPU memory use reasonable.
+    const samples = width * height > FULL_HD_PIXELS ? 2 : 4;
+    const sceneTarget = new THREE.WebGLRenderTarget(width, height, { depthBuffer: true, samples });
     const result = new THREE.WebGLRenderTarget(width, height, { depthBuffer: false });
+    // The post shader outputs linear values; sRGB storage makes the GPU encode them on write,
+    // matching the preview. readRenderTargetPixels then returns the encoded bytes.
     result.texture.colorSpace = THREE.SRGBColorSpace;
+    // Export uses a higher shadow resolution than the 1024 px live preview; 2048 keeps
+    // integrated-GPU memory use moderate while removing blocky shadow edges at 4K.
+    this.setShadowQuality(EXPORT_SHADOW_SIZE);
     try {
+      this.renderCamera(width, height, sceneTarget);
       this.renderer.setRenderTarget(result);
       this.renderer.render(this.postScene, this.postCamera);
       const bytes = new Uint8Array(width * height * 4);
@@ -346,7 +383,12 @@ export class Simulation {
       for (let y = 0; y < height; y++) image.data.set(bytes.subarray((height - 1 - y) * width * 4, (height - y) * width * 4), y * width * 4);
       ctx.putImageData(image, 0, 0);
       return await new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('PNG 编码失败。')), 'image/png'));
-    } finally { this.renderer.setRenderTarget(null); result.dispose(); }
+    } finally {
+      this.renderer.setRenderTarget(null);
+      sceneTarget.dispose(); result.dispose();
+      this.setShadowQuality(PREVIEW_SHADOW_SIZE);
+      this.postMaterial.uniforms.image.value = this.target.texture;
+    }
   }
   resetView() { this.layoutCamera.position.set(7, 6.3, 8); this.controls.target.set(0, 0.7, 0); this.controls.update(); }
   dispose() {

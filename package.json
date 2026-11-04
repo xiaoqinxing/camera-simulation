@@ -9,7 +9,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "optimize:model": "node scripts/optimize-model.mjs",
     "test": "vitest run tests/core.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-sc": "5.3.1",
