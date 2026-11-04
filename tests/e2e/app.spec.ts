@@ -55,6 +55,38 @@ test('离线页面加载、参数交互、配置往返及导出', async ({ page,
   expect(external).toEqual([]); expect(failed).toEqual([]); expect(errors).toEqual([]);
 });
 
+test('墙面快捷机位默认屏幕墙并可切换', async ({ page }) => {
+  await page.goto('/'); await expect(page.getByText('写实人物已就绪')).toBeVisible({ timeout: 60000 });
+  await page.getByRole('button', { name: '摄像机', exact: false }).first().click();
+  const x = page.getByRole('spinbutton', { name: '摄像机位置 X' });
+  const z = page.getByRole('spinbutton', { name: '摄像机位置 Z' });
+  const y = page.getByRole('spinbutton', { name: '安装高度 Y' });
+  const screen = page.getByRole('button', { name: '屏幕墙', exact: true });
+  const opposite = page.getByRole('button', { name: '对面墙', exact: true });
+  await expect(screen).toHaveAttribute('aria-pressed', 'true');
+  await expect(x).toHaveValue('0'); await expect(z).toHaveValue('2.35'); await expect(y).toHaveValue('2.7');
+
+  await opposite.click();
+  await expect(opposite).toHaveAttribute('aria-pressed', 'true'); await expect(screen).toHaveAttribute('aria-pressed', 'false');
+  await expect(x).toHaveValue('0'); await expect(z).toHaveValue('-2.35'); await expect(y).toHaveValue('2.7');
+
+  await page.getByRole('button', { name: '左墙', exact: true }).click();
+  await expect(x).toHaveValue('-1.85'); await expect(z).toHaveValue('0');
+  await page.getByRole('button', { name: '右墙', exact: true }).click();
+  await expect(x).toHaveValue('1.85'); await expect(z).toHaveValue('0');
+
+  await x.fill('0.5'); await x.press('Enter');
+  for (const name of ['屏幕墙', '对面墙', '左墙', '右墙']) await expect(page.getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', 'false');
+
+  await page.getByRole('button', { name: '会议室', exact: false }).click();
+  const length = page.getByRole('spinbutton', { name: '房间长度' }); await length.fill('6'); await length.press('Enter');
+  await page.getByRole('button', { name: '摄像机', exact: false }).first().click();
+  await screen.click();
+  await expect(z).toHaveValue('2.85'); await expect(screen).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: '恢复相机' }).click();
+  await expect(screen).toHaveAttribute('aria-pressed', 'true'); await expect(x).toHaveValue('0'); await expect(z).toHaveValue('2.85'); await expect(y).toHaveValue('2.7');
+});
+
 test('房间变化、4:3 裁切、手动角度和畸变恢复', async ({ page }) => {
   await page.goto('/'); await expect(page.getByText('写实人物已就绪')).toBeVisible({ timeout: 60000 });
   const length = page.getByRole('spinbutton', { name: '房间长度' });
@@ -80,7 +112,8 @@ test('房间变化、4:3 裁切、手动角度和畸变恢复', async ({ page })
   };
   const baseline = await shot();
   await page.getByRole('button', { name: '摄像机', exact: false }).first().click();
-  const currentYaw = page.getByRole('spinbutton', { name: '水平旋转角' }); await currentYaw.fill('180'); await currentYaw.press('Enter');
+  const currentYaw = page.getByRole('spinbutton', { name: '水平旋转角' }); await currentYaw.fill('0'); await currentYaw.press('Enter');
+  const currentPitch = page.getByRole('spinbutton', { name: '俯仰角' }); await currentPitch.fill('0'); await currentPitch.press('Enter');
   await expect(page.getByText('完全画外（位于相机后方）')).toBeVisible();
   await page.getByRole('button', { name: '恢复默认' }).click();
   await page.getByRole('button', { name: '镜头成像' }).click();

@@ -8,19 +8,54 @@ export interface Config {
   distortion: { enabled: boolean; k1: number };
 }
 
+export type CameraWall = 'screen' | 'opposite' | 'left' | 'right';
+export const CAMERA_WALL_INSET = 0.15;
+export const CAMERA_WALL_TOP_GAP = 0.1;
+
+const deg = (r: number) => r * 180 / Math.PI;
+const rad = (d: number) => d * Math.PI / 180;
+const DEFAULT_ROOM: Config['room'] = { length: 5, width: 4, height: 2.8 };
+const DEFAULT_PERSON: Config['person'] = { height: 1.75, x: -1.17, z: 0 };
+
+/** Top-centre camera pose on a wall, aimed at the person's mid-height. */
+export function cameraWallPose(c: Pick<Config, 'room' | 'person'>, wall: CameraWall): Config['camera'] {
+  const y = c.room.height - CAMERA_WALL_TOP_GAP;
+  const acrossLength = c.room.length / 2 - CAMERA_WALL_INSET;
+  const acrossWidth = c.room.width / 2 - CAMERA_WALL_INSET;
+  let x: number, z: number, inwardYaw: number;
+  switch (wall) {
+    case 'screen': x = 0; z = acrossLength; inwardYaw = 180; break;
+    case 'opposite': x = 0; z = -acrossLength; inwardYaw = 0; break;
+    case 'left': x = -acrossWidth; z = 0; inwardYaw = 90; break;
+    case 'right': x = acrossWidth; z = 0; inwardYaw = -90; break;
+  }
+  const dx = c.person.x - x, dz = c.person.z - z;
+  const horizontal = Math.hypot(dx, dz);
+  if (horizontal <= 1e-8) return { x, y, z, yaw: inwardYaw, pitch: 0 };
+  return {
+    x, y, z,
+    yaw: deg(Math.atan2(dx, dz)),
+    pitch: deg(Math.atan2(c.person.height / 2 - y, horizontal)),
+  };
+}
+
 export const DEFAULT_CONFIG: Config = {
   version: 1,
-  room: { length: 5, width: 4, height: 2.8 },
-  person: { height: 1.75, x: -1.65, z: 0.7 },
-  camera: { x: -1.65, y: 1.6, z: -2.3, yaw: 0, pitch: -13.5859912079 },
+  room: { ...DEFAULT_ROOM },
+  person: { ...DEFAULT_PERSON },
+  camera: cameraWallPose({ room: DEFAULT_ROOM, person: DEFAULT_PERSON }, 'screen'),
   lens: { pixelSize: 2, sensorWidth: 3840, sensorHeight: 2160, focalLength: 4 },
   output: { width: 1920, height: 1080 },
   distortion: { enabled: false, k1: 0 },
 };
 
 export const cloneConfig = (c: Config): Config => JSON.parse(JSON.stringify(c)) as Config;
-const deg = (r: number) => r * 180 / Math.PI;
-const rad = (d: number) => d * Math.PI / 180;
+
+export function wallCamera(c: Config, wall: CameraWall): Config {
+  const next = cloneConfig(c);
+  next.camera = cameraWallPose(c, wall);
+  return next;
+}
 export const fovFromSize = (size: number, focal: number) => deg(2 * Math.atan(size / (2 * focal)));
 export const focalFromFov = (size: number, fov: number) => size / (2 * Math.tan(rad(fov) / 2));
 
@@ -108,12 +143,12 @@ export function validateConfig(input: unknown): string | null {
 
 export function layoutWarnings(c: Config): string[] {
   const w: string[] = [];
-  // Fixed 2.2 x 1.2 m table, chairs extend to z=±1.75 m and x=±0.825 m.
-  if (c.room.length < 3.9 || c.room.width < 3.2) w.push('房间较小：固定尺寸的桌椅可能越界或缺少通行空间。');
+  // Fixed 1.2 x 2.2 m table; chairs extend to x=±1.455 m and z=±0.91 m.
+  if (c.room.width < 3.5 || c.room.length < 2.8) w.push('房间较小：固定尺寸的桌椅可能越界或缺少通行空间。');
   if (Math.abs(c.camera.x) > c.room.width / 2 || Math.abs(c.camera.z) > c.room.length / 2 || c.camera.y > c.room.height) w.push('摄像机位于房间边界之外。');
   if (Math.abs(c.person.x) > c.room.width / 2 || Math.abs(c.person.z) > c.room.length / 2 || c.person.height > c.room.height) w.push('人物位于房间边界之外或高于房间。');
-  if (Math.abs(c.person.x) < 1.35 && Math.abs(c.person.z) < 0.85) w.push('人物可能与会议桌重叠；请调整人物位置。');
-  if ([-0.65, 0.65].some(x => [-1.17, 1.17].some(z => Math.abs(c.person.x - x) < 0.5 && Math.abs(c.person.z - z) < 0.5))) w.push('人物可能与椅子重叠；请调整人物位置。');
+  if (Math.abs(c.person.x) < 0.85 && Math.abs(c.person.z) < 1.35) w.push('人物可能与会议桌重叠；请调整人物位置。');
+  if ([-1.17, 1.17].some(x => [-0.65, 0.65].some(z => Math.abs(c.person.x - x) < 0.5 && Math.abs(c.person.z - z) < 0.5))) w.push('人物可能与椅子重叠；请调整人物位置。');
   if (distances(c).horizontal < 1e-6) w.push('摄像机与人物水平位置重合：人物保留上一次朝向。');
   if (optics(c).hfov > 120 || optics(c).vfov > 120) w.push('视场角很大：直线透视模型可能不适用于真实超广角镜头。');
   return w;

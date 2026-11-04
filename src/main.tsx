@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { aimAtPerson, cloneConfig, Config, DEFAULT_CONFIG, distances, focalFromFov, layoutWarnings, optics, summary, validateConfig, withDistance } from './core';
+import { aimAtPerson, CameraWall, cameraWallPose, cloneConfig, Config, DEFAULT_CONFIG, distances, focalFromFov, layoutWarnings, optics, summary, validateConfig, wallCamera, withDistance } from './core';
 import { Assessment, Simulation } from './scene';
 import '@fontsource-variable/noto-sans-sc';
 import './style.css';
@@ -8,6 +8,12 @@ import './fixes.css';
 
 type Group = 'room' | 'person' | 'camera' | 'lens' | 'output' | 'distortion';
 type NumericGroup = Exclude<Group, 'distortion'>;
+const WALLS: Array<{ id: CameraWall; label: string }> = [
+  { id: 'screen', label: '屏幕墙' },
+  { id: 'opposite', label: '对面墙' },
+  { id: 'left', label: '左墙' },
+  { id: 'right', label: '右墙' },
+];
 const pretty = (v: number, n = 2) => Number.isFinite(v) ? v.toFixed(n) : '—';
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob), a = document.createElement('a');
@@ -94,8 +100,15 @@ function App() {
   function fov(axis: 'h' | 'v', value: number) {
     const next = cloneConfig(config); next.lens.focalLength = focalFromFov(axis === 'h' ? o.width : o.height, value); apply(next);
   }
+  function atWall(wall: CameraWall) {
+    const pose = cameraWallPose(config, wall);
+    return Math.abs(config.camera.x - pose.x) < 1e-6 && Math.abs(config.camera.y - pose.y) < 1e-6 && Math.abs(config.camera.z - pose.z) < 1e-6;
+  }
+  function placeCamera(wall: CameraWall) {
+    apply(wallCamera(config, wall));
+  }
   function resetCamera() {
-    const next = cloneConfig(config); next.camera = { ...DEFAULT_CONFIG.camera }; next.lens = { ...DEFAULT_CONFIG.lens }; next.distortion = { ...DEFAULT_CONFIG.distortion }; next.output = { ...DEFAULT_CONFIG.output }; apply(next);
+    const next = cloneConfig(config); next.camera = cameraWallPose(next, 'screen'); next.lens = { ...DEFAULT_CONFIG.lens }; next.distortion = { ...DEFAULT_CONFIG.distortion }; next.output = { ...DEFAULT_CONFIG.output }; apply(next);
   }
   async function loadFile(file: File) {
     try {
@@ -134,7 +147,7 @@ function App() {
         <div className="controls" key={`${active}-${fieldRevision}`}>
           {active === 'room' && <><div className="control-title"><h3>会议室尺寸</h3><p>调整房间大小，桌椅保持真实尺寸。</p></div>
             {field('room', 'length', '房间长度', 'm', 2, 12, 0.1)}{field('room', 'width', '房间宽度', 'm', 2, 10, 0.1)}{field('room', 'height', '房间高度', 'm', 2, 5, 0.1)}
-            <div className="note"><b>自动布局</b> 桌子固定为 2.2 × 1.2 m，四把椅子固定排列。房间过小或发生越界时仅提示，不拉伸家具。</div>
+            <div className="note"><b>自动布局</b> 桌子固定为 1.2 × 2.2 m，四把椅子分列两侧、侧对屏幕。房间过小或发生越界时仅提示，不拉伸家具。</div>
           </>}
           {active === 'person' && <><div className="control-title"><h3>人物设置</h3><p>等比例缩放，始终在水平面内面向摄像机。</p></div>
             {field('person', 'height', '人物身高', 'm', 1.2, 2.2, 0.01)}
@@ -143,6 +156,14 @@ function App() {
             <div className="note"><b>三维直线距离 {pretty(d.spatial)} m</b><br />从摄像机光心到人物身高中点。家具可能遮挡人物，不会强制全身入画。</div>
           </>}
           {active === 'camera' && <><div className="control-title"><h3>摄像机位置与角度</h3><p>手动角度不会被自动对准覆盖。</p></div>
+            <div className="wall-preset-title">墙面快捷机位 <span>顶部中央</span></div>
+            <div className="wall-presets" role="group" aria-label="墙面快捷机位">
+              {WALLS.map(wall => {
+                const selected = atWall(wall.id);
+                return <button type="button" key={wall.id} className={selected ? 'active' : ''} aria-pressed={selected} onClick={() => placeCamera(wall.id)} title={`${wall.label}顶部中央机位`}>{wall.label}</button>;
+              })}
+            </div>
+            <div className="field-help wall-help">机位位于墙面水平中心、向室内 0.15 m、顶部下方 0.1 m；选择后自动对准人物中点。</div>
             {field('camera', 'x', '摄像机位置 X', 'm', -20, 20, 0.05)}{field('camera', 'z', '摄像机位置 Z', 'm', -20, 20, 0.05)}{field('camera', 'y', '安装高度 Y', 'm', 0.05, 10, 0.05)}
             {field('camera', 'yaw', '水平旋转角', '°', -180, 180, 1, '0° 指向 +Z，正角朝 +X。')}{field('camera', 'pitch', '俯仰角', '°', -89, 89, 1, '正值朝上；横滚固定 0°。')}
             <div className="button-row"><button className="outline-btn" onClick={() => { try { apply(aimAtPerson(config)); } catch (e) { setMessage((e as Error).message); } }}>◎ 对准人物</button><button className="outline-btn" onClick={resetCamera}>↺ 恢复相机</button></div>

@@ -209,11 +209,12 @@ export class Simulation {
     const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
     gridMaterials.forEach(material => { material.depthTest = false; material.transparent = true; material.opacity = 0.55; });
     grid.renderOrder = 2; this.room.add(grid);
-    this.furniture.add(box(2.2, 0.06, 1.2, wood, 0, 0.75, 0));
-    for (const x of [-0.93, 0.93]) for (const z of [-0.45, 0.45]) this.furniture.add(box(0.08, 0.72, 0.08, dark, x, 0.36, z));
-    for (const x of [-0.65, 0.65]) for (const z of [-1.17, 1.17]) {
+    this.furniture.add(box(1.2, 0.06, 2.2, wood, 0, 0.75, 0));
+    for (const x of [-0.45, 0.45]) for (const z of [-0.93, 0.93]) this.furniture.add(box(0.08, 0.72, 0.08, dark, x, 0.36, z));
+    // Chairs sit on the left and right sides, so their sides face the screen wall (+Z).
+    for (const x of [-1.17, 1.17]) for (const z of [-0.65, 0.65]) {
       this.furniture.add(box(0.52, 0.12, 0.52, fabric, x, 0.49, z));
-      this.furniture.add(box(0.52, 0.58, 0.09, fabric, x, 0.78, z + (z > 0 ? 0.24 : -0.24)));
+      this.furniture.add(box(0.09, 0.58, 0.52, fabric, x + (x > 0 ? 0.24 : -0.24), 0.78, z));
       for (const dx of [-0.19, 0.19]) for (const dz of [-0.19, 0.19]) this.furniture.add(box(0.035, 0.43, 0.035, dark, x + dx, 0.215, z + dz));
     }
     this.updateLayoutWalls();

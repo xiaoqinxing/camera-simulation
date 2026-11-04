@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { aimAtPerson, cloneConfig, DEFAULT_CONFIG, distances, focalFromFov, fovFromSize, optics, personFacingAngle, summary, validateConfig, withDistance } from '../src/core';
+import { aimAtPerson, CAMERA_WALL_INSET, CAMERA_WALL_TOP_GAP, cameraWallPose, cloneConfig, DEFAULT_CONFIG, distances, focalFromFov, fovFromSize, optics, personFacingAngle, summary, validateConfig, wallCamera, withDistance } from '../src/core';
 
 describe('光学计算', () => {
   it('符合指定 2 μm / 3840×2160 / 4 mm 样例', () => {
@@ -37,17 +37,67 @@ describe('光学计算', () => {
   });
 });
 
+describe('墙面快捷机位', () => {
+  it('默认机位在屏幕墙顶部中央并对准人物中点', () => {
+    const c = DEFAULT_CONFIG;
+    expect(c.camera.x).toBeCloseTo(0, 8);
+    expect(c.camera.z).toBeCloseTo(c.room.length / 2 - CAMERA_WALL_INSET, 8);
+    expect(c.camera.y).toBeCloseTo(c.room.height - CAMERA_WALL_TOP_GAP, 8);
+    const aimed = aimAtPerson(c).camera;
+    expect(c.camera.yaw).toBeCloseTo(aimed.yaw, 10);
+    expect(c.camera.pitch).toBeCloseTo(aimed.pitch, 10);
+  });
+  it('四个机位位于各墙水平中心、顶部并对准人物', () => {
+    const c = DEFAULT_CONFIG, top = c.room.height - CAMERA_WALL_TOP_GAP;
+    const screen = cameraWallPose(c, 'screen'), opposite = cameraWallPose(c, 'opposite');
+    const left = cameraWallPose(c, 'left'), right = cameraWallPose(c, 'right');
+    expect(screen.x).toBeCloseTo(0); expect(screen.z).toBeCloseTo(c.room.length / 2 - CAMERA_WALL_INSET);
+    expect(opposite.x).toBeCloseTo(0); expect(opposite.z).toBeCloseTo(-(c.room.length / 2 - CAMERA_WALL_INSET));
+    expect(left.z).toBeCloseTo(0); expect(left.x).toBeCloseTo(-(c.room.width / 2 - CAMERA_WALL_INSET));
+    expect(right.z).toBeCloseTo(0); expect(right.x).toBeCloseTo(c.room.width / 2 - CAMERA_WALL_INSET);
+    for (const pose of [screen, opposite, left, right]) {
+      expect(pose.y).toBeCloseTo(top);
+      const aimed = aimAtPerson({ ...c, camera: pose }).camera;
+      expect(pose.yaw).toBeCloseTo(aimed.yaw, 10);
+      expect(pose.pitch).toBeCloseTo(aimed.pitch, 10);
+    }
+  });
+  it('房间尺寸变化后机位随之调整，且不修改原配置', () => {
+    const c = cloneConfig(DEFAULT_CONFIG);
+    c.room = { length: 7, width: 6, height: 3 };
+    const placed = wallCamera(c, 'screen');
+    expect(placed.camera.z).toBeCloseTo(3.35, 8);
+    expect(placed.camera.y).toBeCloseTo(2.9, 8);
+    expect(c.camera).toEqual(DEFAULT_CONFIG.camera);
+  });
+  it('人物与机位水平重合时朝向室内且保持水平', () => {
+    const c = cloneConfig(DEFAULT_CONFIG);
+    const expected = { screen: 180, opposite: 0, left: 90, right: -90 } as const;
+    for (const wall of ['screen', 'opposite', 'left', 'right'] as const) {
+      const anchor = cameraWallPose(c, wall);
+      const pose = cameraWallPose({ room: c.room, person: { ...c.person, x: anchor.x, z: anchor.z } }, wall);
+      expect(pose.yaw).toBe(expected[wall]);
+      expect(pose.pitch).toBe(0);
+    }
+  });
+});
+
 describe('状态和配置', () => {
   it('水平距离沿原方向移动，三维距离使用身高中点', () => {
-    const c = withDistance(DEFAULT_CONFIG, 5), d = distances(c);
-    expect(d.horizontal).toBeCloseTo(5); expect(c.person.x).toBeCloseTo(DEFAULT_CONFIG.person.x);
-    expect(d.spatial).toBeCloseTo(Math.hypot(5, 1.6 - 1.75 / 2));
+    const origin = distances(DEFAULT_CONFIG), c = withDistance(DEFAULT_CONFIG, 5), d = distances(c);
+    expect(d.horizontal).toBeCloseTo(5);
+    expect(c.person.x - DEFAULT_CONFIG.camera.x).toBeCloseTo((DEFAULT_CONFIG.person.x - DEFAULT_CONFIG.camera.x) * 5 / origin.horizontal);
+    expect(d.spatial).toBeCloseTo(Math.hypot(5, DEFAULT_CONFIG.camera.y - 1.75 / 2));
   });
   it('对准人物是一次性角度计算', () => {
     const c = aimAtPerson(DEFAULT_CONFIG);
-    expect(c.camera.yaw).toBeCloseTo(0); expect(c.camera.pitch).toBeCloseTo(-13.585991, 4);
+    expect(c.camera.yaw).toBeCloseTo(-153.5326, 4); expect(c.camera.pitch).toBeCloseTo(-34.807, 4);
     const changed = cloneConfig(c); changed.person.x += 1;
     expect(changed.camera.yaw).toEqual(c.camera.yaw);
+  });
+  it('默认人物位于两把椅子之间、桌子旁', () => {
+    expect(DEFAULT_CONFIG.person.x).toBeCloseTo(-1.17, 8);
+    expect(DEFAULT_CONFIG.person.z).toBeCloseTo(0, 8);
   });
   it('人物只在水平面转向，相机高度无影响，重合时保持朝向', () => {
     const c = cloneConfig(DEFAULT_CONFIG);
