@@ -1,0 +1,50 @@
+name: Deploy production site
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: 构建并通过 SSH 部署
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: 配置 SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+      - name: 同步静态文件
+        run: |
+          rsync -az --delete --chmod=D755,F644 \
+            -e 'ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+            dist/ root@qinxing.xyz:/srv/camera-simulation/
+      - name: 校验线上站点
+        run: |
+          curl -fsS --retry 5 --retry-delay 2 https://camera-simulation.li.qinxing.xyz/ -o /dev/null
+          curl -fsS --retry 5 --retry-delay 2 \
+            https://camera-simulation.li.qinxing.xyz/assets/hsrd-hsr0040-body-023-web.glb -o /dev/null

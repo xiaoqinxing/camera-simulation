@@ -1,10 +1,12 @@
 # 镜界 · 摄像机效果仿真
 
+[![CI](https://github.com/xiaoqinxing/camera-simulation/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoqinxing/camera-simulation/actions/workflows/ci.yml)
+
 > **把会议室、人物和镜头装进浏览器：选一面墙、摆好位置、调准焦距，30 秒看清一台摄像机到底能拍到什么。**
 
 镜界是一个运行在浏览器里的 Three.js 摄像机仿真控制台，面向会议室摄像机的**方案演示与初步选型**。左侧改参数，右侧即时看到 3D 空间布局和镜头画面；人物、纹理、字体、模型全部随包提供，没有 CDN、在线字体、在线模型服务或外部接口。
 
-**[▶ 在线体验](https://camera-simulation.li.qinxing.xyz/)** ｜ [零安装运行](#方式一零安装预构建静态包) ｜ [源码运行](#方式二源码开发) ｜ [部署](#方式三部署到自己的服务器)
+**[▶ 在线体验](https://camera-simulation.li.qinxing.xyz/)** ｜ [GitHub Pages 镜像](https://xiaoqinxing.github.io/camera-simulation/) ｜ [零安装运行](#方式一零安装预构建静态包) ｜ [源码运行](#方式二源码开发) ｜ [部署](#方式三部署到自己的服务器)
 
 ![镜界控制台界面：左侧参数、3D 场景布局、摄像机画面与画面分析](docs/screenshot.png)
 
@@ -93,6 +95,30 @@ npm run deploy -- --prune        # 让线上目录与 dist/ 完全一致（执�
 ```
 
 部署脚本依赖 `bash`、`ssh`、`rsync`、`curl` 和 `md5sum`。
+
+### 方式四：GitHub Actions 自动部署
+
+推送到 `master` 后，GitHub Actions 会并行执行三条流水线：
+
+| 工作流 | 触发 | 作用 |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | push / PR | 单元测试、生产构建、Playwright E2E |
+| `.github/workflows/pages.yml` | push `master` | 构建并发布到 GitHub Pages |
+| `.github/workflows/deploy.yml` | push `master` | 构建并通过 SSH 同步到自有服务器 |
+
+两个部署地址：
+
+- GitHub Pages：<https://xiaoqinxing.github.io/camera-simulation/>
+- 自有站点：<https://camera-simulation.li.qinxing.xyz/>
+
+自有站点部署需要仓库 Actions secrets：
+
+| Secret | 内容 |
+| --- | --- |
+| `SSH_PRIVATE_KEY` | 可登录 `root@qinxing.xyz` 的部署私钥 |
+| `SSH_KNOWN_HOSTS` | `qinxing.xyz` 的 SSH 主机公钥（`ssh-keyscan -t ed25519 qinxing.xyz`） |
+
+首次启用 Pages 时，在仓库 **Settings → Pages** 将 Source 设为 **GitHub Actions**。两个部署工作流也都支持在 Actions 页面手动 `Run workflow`。
 
 ---
 
@@ -248,7 +274,8 @@ src/main.tsx         React 控制台界面
 src/style.css        界面样式
 public/assets/       写实人物 GLB
 public/licenses/     人物、字体及第三方许可
-scripts/deploy.sh    构建产物部署脚本
+scripts/deploy.sh    构建产物部署脚本（手动部署）
+.github/workflows/   CI、GitHub Pages 与自有站点自动部署
 scripts/optimize-model.mjs  人物模型压缩与纹理重编码
 tests/core.test.ts   Vitest 计算测试
 tests/e2e/app.spec.ts Playwright 浏览器测试
