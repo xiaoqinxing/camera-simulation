@@ -111,12 +111,14 @@ npm run deploy -- --prune        # 让线上目录与 dist/ 完全一致（执�
 - GitHub Pages：<https://xiaoqinxing.github.io/camera-simulation/>
 - 自有站点：<https://camera-simulation.li.qinxing.xyz/>
 
-自有站点部署需要仓库 Actions secrets：
+自有站点部署使用受保护的 **`production` Environment**（仅允许 `master` 分支使用），需要在其中配置：
 
 | Secret | 内容 |
 | --- | --- |
-| `SSH_PRIVATE_KEY` | 可登录 `root@qinxing.xyz` 的部署私钥 |
+| `SSH_PRIVATE_KEY` | 专用部署私钥（建议在服务器 `authorized_keys` 中加 `restrict,command="/usr/bin/rrsync -wo /srv/camera-simulation"`，只允许写入该目录） |
 | `SSH_KNOWN_HOSTS` | `qinxing.xyz` 的 SSH 主机公钥（`ssh-keyscan -t ed25519 qinxing.xyz`） |
+
+密钥只存放在 GitHub Actions Secrets 中，不进入仓库；工作流里也不回显。由于服务器端目标路径由 `rrsync` 固定，工作流中的 rsync 目标写作 `root@qinxing.xyz:/`。
 
 首次启用 Pages 时，在仓库 **Settings → Pages** 将 Source 设为 **GitHub Actions**。两个部署工作流也都支持在 Actions 页面手动 `Run workflow`。
 

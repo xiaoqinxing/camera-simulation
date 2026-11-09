@@ -17,6 +17,9 @@ jobs:
     name: 构建并通过 SSH 部署
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    environment:
+      name: production
+      url: https://camera-simulation.li.qinxing.xyz/
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,10 +42,12 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
       - name: 同步静态文件
+        # 服务器端该密钥被强制为 rrsync -wo /srv/camera-simulation，
+        # 因此客户端目标写 /，实际落点由服务端固定，无法写到其他目录。
         run: |
           rsync -az --delete --chmod=D755,F644 \
             -e 'ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes' \
-            dist/ root@qinxing.xyz:/srv/camera-simulation/
+            dist/ root@qinxing.xyz:/
       - name: 校验线上站点
         run: |
           curl -fsS --retry 5 --retry-delay 2 https://camera-simulation.li.qinxing.xyz/ -o /dev/null
