@@ -25,7 +25,7 @@ test('离线页面加载、参数交互、配置往返及导出', async ({ page,
   await page.getByRole('button', { name: '镜头成像' }).click();
   const focal = page.getByRole('spinbutton', { name: '实际焦距' });
   await focal.fill('0'); await focal.press('Enter');
-  await expect(page.getByRole('alert')).toContainText('0.5–50'); await expect(focal).toHaveValue('4');
+  await expect(page.getByRole('alert')).toContainText('范围内的数字'); await expect(focal).toHaveValue('4');
   await focal.fill('8'); await focal.press('Enter');
   await expect(page.getByText('51.3°', { exact: true })).toBeVisible();
   const hfov = page.getByRole('spinbutton', { name: '画面水平视场角' });

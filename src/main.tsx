@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { aimAtPerson, CameraWall, cameraWallPose, cloneConfig, Config, DEFAULT_CONFIG, distances, distortionMetrics, focalFromFov, layoutWarnings, optics, summary, validateConfig, wallCamera, withDistance } from './core';
+import { aimAtPerson, CameraWall, cameraWallPose, cloneConfig, Config, DEFAULT_CONFIG, distances, distortionMetrics, focalFromFov, focalRange, layoutWarnings, MAX_FOV, MIN_FOV, optics, summary, validateConfig, wallCamera, withDistance } from './core';
 import { Assessment, Simulation } from './scene';
 import versionInfo from 'virtual:app-version';
 import '@fontsource-variable/noto-sans-sc';
@@ -31,8 +31,12 @@ function Field({ label, unit, value, min, max, step, onChange, help, integer }: 
   function commit() {
     setEditing(false);
     const n = Number(text);
+    // Accept the current display value even when a derived value sits slightly
+    // outside the control's own bounds (e.g. the aspect-linked other FOV axis).
+    if (text.trim() && n === Number(value.toFixed(integer ? 0 : 3))) { setError(''); return; }
     if (!text.trim() || !Number.isFinite(n) || n < min || n > max || (integer && !Number.isInteger(n))) {
-      setError(`请输入 ${min}–${max} 范围内的${integer ? '整数' : '数字'}。`);
+      const range = `${Number(min.toPrecision(4))}–${Number(max.toPrecision(4))}`;
+      setError(`请输入 ${range} 范围内的${integer ? '整数' : '数字'}。`);
       setText(String(Number(value.toFixed(integer ? 0 : 3))));
       return;
     }
@@ -105,6 +109,7 @@ function App() {
   const simulation = useRef<Simulation | null>(null), fileInput = useRef<HTMLInputElement>(null);
   const initial = useRef(config);
   const o = useMemo(() => optics(config), [config]);
+  const fr = useMemo(() => focalRange(o), [o]);
   const dm = useMemo(() => distortionMetrics(config), [config]);
   const d = useMemo(() => distances(config), [config]);
   const warnings = useMemo(() => layoutWarnings(config), [config]);
@@ -218,9 +223,9 @@ function App() {
           {active === 'lens' && <><div className="control-title"><h3>镜头与成像</h3><p>输入有效成像区域与镜头实际焦距。</p></div>
             {field('lens', 'pixelSize', '像素大小', 'μm', 0.5, 10, 0.01)}
             {field('lens', 'sensorWidth', '有效成像像素宽', 'px', 256, 12000, 1, undefined, true)}{field('lens', 'sensorHeight', '有效成像像素高', 'px', 256, 12000, 1, undefined, true)}
-            {field('lens', 'focalLength', '实际焦距', 'mm', 0.5, 50, 0.01, '不是 35 mm 等效焦距。')}
-            <Field label="画面水平视场角" unit="°" value={o.hfov} min={1} max={169} step={0.1} onChange={v => fov('h', v)} />
-            <Field label="画面垂直视场角" unit="°" value={o.vfov} min={1} max={169} step={0.1} onChange={v => fov('v', v)} />
+            {field('lens', 'focalLength', '实际焦距', 'mm', fr.min, fr.max, 0.01, '不是 35 mm 等效焦距；范围随成像尺寸变化。')}
+            <Field label="画面水平视场角" unit="°" value={o.hfov} min={MIN_FOV} max={MAX_FOV} step={0.1} onChange={v => fov('h', v)} />
+            <Field label="画面垂直视场角" unit="°" value={o.vfov} min={MIN_FOV} max={MAX_FOV} step={0.1} onChange={v => fov('v', v)} />
             <div className="separator" /><div className="switch-row"><div><b>镜头畸变</b><small>简化径向模型，非实测标定</small></div><button role="switch" aria-label="镜头畸变" aria-checked={config.distortion.enabled} className={`switch ${config.distortion.enabled ? 'on' : ''}`} onClick={() => setDistortion('enabled', !config.distortion.enabled)}><span /></button></div>
             <Field label="径向畸变 k1" value={config.distortion.k1} min={-0.35} max={0.35} step={0.005} onChange={v => setDistortion('k1', v)} help="负值桶形，正值枕形；采样越界显示黑边。" />
             <div className="distortion-metrics" aria-label="等效畸变参数">

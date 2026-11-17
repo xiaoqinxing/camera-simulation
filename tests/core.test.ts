@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { aimAtPerson, CAMERA_WALL_INSET, CAMERA_WALL_TOP_GAP, cameraWallPose, cloneConfig, DEFAULT_CONFIG, distances, distortionMetrics, focalFromFov, fovFromSize, halfBodyRatio, optics, PORTRAIT_HEIGHT, personFacingAngle, summary, validateConfig, wallCamera, withDistance } from '../src/core';
+import { aimAtPerson, CAMERA_WALL_INSET, CAMERA_WALL_TOP_GAP, cameraWallPose, cloneConfig, DEFAULT_CONFIG, distances, distortionMetrics, focalFromFov, fovFromSize, halfBodyRatio, MAX_FOV, MIN_FOV, optics, PORTRAIT_HEIGHT, personFacingAngle, summary, validateConfig, wallCamera, withDistance } from '../src/core';
 
 describe('光学计算', () => {
   it('符合指定 2 μm / 3840×2160 / 4 mm 样例', () => {
@@ -166,6 +166,19 @@ describe('状态和配置', () => {
     loaded.output.width = 0; expect(validateConfig(loaded)).toMatch(/output.width/);
     loaded.output.width = 1920; loaded.lens.pixelSize = NaN; expect(validateConfig(loaded)).toMatch(/lens.pixelSize/);
     expect(validateConfig({ version: 99 })).toMatch(/版本/);
+  });
+  it('视场角可调范围扩展到 0.1°–179°', () => {
+    for (const target of [MIN_FOV, 1, 90, MAX_FOV]) {
+      const c = cloneConfig(DEFAULT_CONFIG), o = optics(c);
+      c.lens.focalLength = focalFromFov(Math.max(o.width, o.height), target);
+      expect(validateConfig(c)).toBeNull();
+    }
+  });
+  it('拒绝超出 0.1°–179° 的视场角', () => {
+    const tele = cloneConfig(DEFAULT_CONFIG); tele.lens.focalLength = 100000;
+    expect(validateConfig(tele)).toMatch(/视场角/);
+    const wide = cloneConfig(DEFAULT_CONFIG); wide.lens.focalLength = 0.0001;
+    expect(validateConfig(wide)).toMatch(/视场角/);
   });
   it('拒绝桶形映射在视场内变得不稳定的组合', () => {
     const c = cloneConfig(DEFAULT_CONFIG); c.distortion = { enabled: true, k1: -0.35 };

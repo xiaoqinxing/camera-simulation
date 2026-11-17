@@ -58,6 +58,10 @@ export function wallCamera(c: Config, wall: CameraWall): Config {
   next.camera = cameraWallPose(c, wall);
   return next;
 }
+/** Adjustable field-of-view range, in degrees. */
+export const MIN_FOV = 0.1;
+export const MAX_FOV = 179;
+
 export const fovFromSize = (size: number, focal: number) => deg(2 * Math.atan(size / (2 * focal)));
 export const focalFromFov = (size: number, fov: number) => size / (2 * Math.tan(rad(fov) / 2));
 
@@ -74,6 +78,18 @@ export function optics(c: Config) {
     hfov: fovFromSize(width, f), vfov: fovFromSize(height, f),
     dfov: fovFromSize(Math.hypot(width, height), f),
     r2max: (width * width + height * height) / (4 * f * f),
+  };
+}
+
+/**
+ * Focal-length bounds (mm) covering every setting where either cropped
+ * dimension can reach [MIN_FOV, MAX_FOV]. The other dimension follows the
+ * output aspect and may go slightly outside that range.
+ */
+export function focalRange(o: ReturnType<typeof optics>) {
+  return {
+    min: focalFromFov(Math.min(o.width, o.height), MAX_FOV),
+    max: focalFromFov(Math.max(o.width, o.height), MIN_FOV),
   };
 }
 
@@ -166,7 +182,7 @@ const bounds: Record<string, [number, number, boolean?]> = {
   'camera.x': [-20, 20], 'camera.y': [0.05, 10], 'camera.z': [-20, 20],
   'camera.yaw': [-180, 180], 'camera.pitch': [-89, 89],
   'lens.pixelSize': [0.5, 10], 'lens.sensorWidth': [256, 12000, true],
-  'lens.sensorHeight': [256, 12000, true], 'lens.focalLength': [0.5, 50],
+  'lens.sensorHeight': [256, 12000, true], 'lens.focalLength': [0.0001, 100000],
   'output.width': [256, 4096, true], 'output.height': [256, 4096, true],
   'distortion.k1': [-0.35, 0.35],
 };
@@ -188,7 +204,13 @@ export function validateConfig(input: unknown): string | null {
   if (typeof d.enabled !== 'boolean') return 'distortion.enabled 必须是布尔值。';
   const c = input as Config;
   const o = optics(c);
-  if (o.hfov >= 170 || o.vfov >= 170) return '计算出的画面视场角必须小于 170°。';
+  const fovs = [o.hfov, o.vfov];
+  // One axis may fall outside [0.1°, 179°] when the output aspect differs:
+  // the user can still set either displayed FOV to a limit and the other
+  // dimension follows the aspect ratio. Both must stay inside the pinhole model.
+  if (fovs.some(v => !(v > 0) || v >= 180)) return '计算出的视场角必须大于 0° 且小于 180°。';
+  if (Math.max(...fovs) < MIN_FOV - 1e-6) return `计算出的视场角不能小于 ${MIN_FOV}°。`;
+  if (Math.min(...fovs) > MAX_FOV + 1e-6) return `计算出的视场角不能大于 ${MAX_FOV}°。`;
   if (d.enabled && 1 + 3 * c.distortion.k1 * o.r2max < 0.4) {
     return '桶形畸变过强：该视场边缘的径向映射会失去稳定性，请减小强度。';
   }
