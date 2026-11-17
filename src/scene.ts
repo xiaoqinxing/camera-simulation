@@ -2,14 +2,14 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { Config, optics, personFacingAngle } from './core';
+import { Config, halfBodyRatio, optics, personFacingAngle } from './core';
 
 const PREVIEW_SAMPLES = 4;
 const PREVIEW_SHADOW_SIZE = 1024;
 const EXPORT_SHADOW_SIZE = 2048;
 const FULL_HD_PIXELS = 1920 * 1080;
 
-export interface Assessment { framing: string; ratio: number | null; occlusion: string; }
+export interface Assessment { framing: string; portrait: number | null; occlusion: string; }
 type Callbacks = { onAssessment: (a: Assessment) => void; onModel: (s: string, error?: boolean) => void };
 
 const postVertex = `varying vec2 vUv; void main(){vUv=uv; gl_Position=vec4(position,1.0);}`;
@@ -263,6 +263,7 @@ export class Simulation {
   private evaluate() {
     if (!this.model) return;
     const c = this.config, o = optics(c), box = this.modelBox;
+    const portrait = halfBodyRatio(c);
     const coords: THREE.Vector2[] = [];
     let behind = 0;
     // Sample the edges of the conservative local AABB; distortion can curve edges.
@@ -280,15 +281,14 @@ export class Simulation {
         coords.push(new THREE.Vector2(x / (o.width / c.lens.focalLength) + 0.5, y / (o.height / c.lens.focalLength) + 0.5));
       }
     }
-    if (behind && coords.length) return this.publish({ framing: '不确定（人物跨越近裁剪面）', ratio: null, occlusion: '无法可靠判断' });
-    if (!coords.length) return this.publish({ framing: '完全画外（位于相机后方）', ratio: 0, occlusion: '不适用' });
-    if (c.distortion.enabled && Math.abs(c.distortion.k1) > 1e-8) return this.publish({ framing: '畸变开启：入画不确定', ratio: null, occlusion: '畸变画面无法可靠判断' });
+    if (behind && coords.length) return this.publish({ framing: '不确定（人物跨越近裁剪面）', portrait, occlusion: '无法可靠判断' });
+    if (!coords.length) return this.publish({ framing: '完全画外（位于相机后方）', portrait, occlusion: '不适用' });
+    if (c.distortion.enabled && Math.abs(c.distortion.k1) > 1e-8) return this.publish({ framing: '畸变开启：入画不确定', portrait, occlusion: '畸变画面无法可靠判断' });
     const xs = coords.map(p => p.x), ys = coords.map(p => p.y);
     const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
     const outside = maxX < 0 || minX > 1 || maxY < 0 || minY > 1;
     // Do not claim completeness where distorted boundaries could intersect the sampled box.
     const full = minX >= 0 && maxX <= 1 && minY >= 0 && maxY <= 1;
-    const ratio = outside ? 0 : Math.max(0, Math.min(1, maxY) - Math.max(0, minY));
     let occlusion = '未发现采样点遮挡';
     if (!outside) {
       const raycaster = new THREE.Raycaster();
@@ -301,7 +301,7 @@ export class Simulation {
       }).length;
       if (hits) occlusion = `可能被遮挡（${hits}/4 个中心采样点）`;
     } else occlusion = '不适用';
-    this.publish({ framing: outside ? '预计完全画外' : full ? '预计完整入画' : '部分出画或临界（保守估计）', ratio, occlusion });
+    this.publish({ framing: outside ? '预计完全画外' : full ? '预计完整入画' : '部分出画或临界（保守估计）', portrait, occlusion });
   }
 
   private publish(a: Assessment) {

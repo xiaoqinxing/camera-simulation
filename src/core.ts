@@ -11,6 +11,8 @@ export interface Config {
 export type CameraWall = 'screen' | 'opposite' | 'left' | 'right';
 export const CAMERA_WALL_INSET = 0.15;
 export const CAMERA_WALL_TOP_GAP = 0.1;
+/** Half-body reference height from the top of the head down to roughly the waist, in metres. */
+export const PORTRAIT_HEIGHT = 0.7;
 
 const deg = (r: number) => r * 180 / Math.PI;
 const rad = (d: number) => d * Math.PI / 180;
@@ -78,6 +80,30 @@ export function optics(c: Config) {
 export function distances(c: Config) {
   const horizontal = Math.hypot(c.person.x - c.camera.x, c.person.z - c.camera.z);
   return { horizontal, spatial: Math.hypot(horizontal, c.person.height / 2 - c.camera.y) };
+}
+
+/**
+ * Frame-height fraction of the top-down half-body reference segment.
+ * The segment runs from the top of the head down PORTRAIT_HEIGHT metres.
+ * This is an undistorted theoretical value and is not clipped to the frame.
+ * Returns null when either endpoint is at or behind the camera.
+ */
+export function halfBodyRatio(c: Config): number | null {
+  const yaw = rad(c.camera.yaw), pitch = rad(c.camera.pitch);
+  const fx = Math.sin(yaw) * Math.cos(pitch), fy = Math.sin(pitch), fz = Math.cos(yaw) * Math.cos(pitch);
+  const horizontal = Math.hypot(fx, fz);
+  // Camera has no roll: right = normalize(up × backward); cameraUp = backward × right.
+  const rx = horizontal > 1e-8 ? -fz / horizontal : 1, rz = horizontal > 1e-8 ? fx / horizontal : 0;
+  const ux = -fy * rz, uy = -fz * rx + fx * rz, uz = fy * rx;
+  const tangent = (y: number) => {
+    const dx = c.person.x - c.camera.x, dy = y - c.camera.y, dz = c.person.z - c.camera.z;
+    const depth = dx * fx + dy * fy + dz * fz;
+    if (depth <= 1e-8) return null;
+    return (dx * ux + dy * uy + dz * uz) / depth;
+  };
+  const top = tangent(c.person.height), bottom = tangent(c.person.height - PORTRAIT_HEIGHT);
+  if (top === null || bottom === null) return null;
+  return Math.abs(top - bottom) / (2 * Math.tan(rad(optics(c).vfov) / 2));
 }
 
 /** Only a yaw is computed; camera height deliberately has no effect. */
@@ -155,12 +181,13 @@ export function layoutWarnings(c: Config): string[] {
 }
 
 export function summary(c: Config, status = ''): string {
-  const o = optics(c), d = distances(c), n = (x: number) => x.toFixed(2);
+  const o = optics(c), d = distances(c), p = halfBodyRatio(c), n = (x: number) => x.toFixed(2);
   return [
     '镜界 · 摄像机效果仿真参数摘要', '用途：演示与初步选型；理论值不等于真实实测值。', '',
     `房间（长×宽×高）：${c.room.length} × ${c.room.width} × ${c.room.height} m`,
     `人物身高：${c.person.height} m；地面位置 X=${n(c.person.x)}、Z=${n(c.person.z)} m`,
     `水平距离：${n(d.horizontal)} m；摄像机到人物身高中点的三维距离：${n(d.spatial)} m`,
+    `半身人像占比（头顶向下 ${PORTRAIT_HEIGHT} m）：${p === null ? '—' : `${(p * 100).toFixed(1)}%`}`,
     `摄像机位置 X=${n(c.camera.x)}、Y=${n(c.camera.y)}、Z=${n(c.camera.z)} m`,
     `水平角：${n(c.camera.yaw)}°；俯仰角：${n(c.camera.pitch)}°；横滚：0°`,
     `像素大小：${c.lens.pixelSize} μm；有效成像像素：${c.lens.sensorWidth} × ${c.lens.sensorHeight} px`,

@@ -50,7 +50,7 @@ function App() {
   const [config, setConfig] = useState<Config>(() => cloneConfig(DEFAULT_CONFIG));
   const [message, setMessage] = useState('');
   const [model, setModel] = useState({ text: '正在初始化…', error: false });
-  const [assessment, setAssessment] = useState<Assessment>({ framing: '等待人物加载', ratio: null, occlusion: '等待人物加载' });
+  const [assessment, setAssessment] = useState<Assessment>({ framing: '等待人物加载', portrait: null, occlusion: '等待人物加载' });
   const [active, setActive] = useState<'room' | 'person' | 'camera' | 'lens' | 'output'>('room');
   const host = useRef<HTMLDivElement>(null), layout = useRef<HTMLDivElement>(null), cameraView = useRef<HTMLDivElement>(null), stage = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -201,8 +201,8 @@ function App() {
 
         <div className="analysis-head"><div><span className="eyebrow">SELECTION INSIGHTS</span><h2>画面分析 <span>实时计算</span></h2></div><small>理论值仅供初步选型参考</small></div>
         <div className="metric-grid">
-          <div className="metric"><div className="metric-label">人物入画 <span>↗</span></div><strong className={assessment.framing.includes('完整') ? 'good' : ''}>{assessment.framing}</strong><small>{assessment.occlusion}</small></div>
-          <div className="metric"><div className="metric-label">画内高度占比 <span>▥</span></div><strong>{assessment.ratio === null ? '—' : `${pretty(assessment.ratio * 100, 1)}%`}</strong><small>包围盒投影高度近似，非像素占比</small></div>
+          <div className="metric"><div className="metric-label">人物距离 <span>↔</span></div><strong>{pretty(d.horizontal)}<em>m</em></strong><small>相机到人物水平距离 · 三维直线 {pretty(d.spatial)} m</small></div>
+          <div className="metric"><div className="metric-label">半身人像占比 <span>▤</span></div><strong>{assessment.portrait === null ? '—' : `${pretty(assessment.portrait * 100, 1)}%`}</strong><small>头顶向下 0.7 m 投影高度 ÷ 画面高度（无畸变理论值）</small></div>
           <div className="metric"><div className="metric-label">水平视场角 <span>⌁</span></div><strong>{pretty(o.hfov, 1)}<em>°</em></strong><small>裁切后 · 无畸变理论值</small></div>
           <div className="metric"><div className="metric-label">垂直视场角 <span>⌁</span></div><strong>{pretty(o.vfov, 1)}<em>°</em></strong><small>裁切后 · 无畸变理论值</small></div>
         </div>

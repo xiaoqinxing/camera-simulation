@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { aimAtPerson, CAMERA_WALL_INSET, CAMERA_WALL_TOP_GAP, cameraWallPose, cloneConfig, DEFAULT_CONFIG, distances, focalFromFov, fovFromSize, optics, personFacingAngle, summary, validateConfig, wallCamera, withDistance } from '../src/core';
+import { aimAtPerson, CAMERA_WALL_INSET, CAMERA_WALL_TOP_GAP, cameraWallPose, cloneConfig, DEFAULT_CONFIG, distances, focalFromFov, fovFromSize, halfBodyRatio, optics, PORTRAIT_HEIGHT, personFacingAngle, summary, validateConfig, wallCamera, withDistance } from '../src/core';
 
 describe('光学计算', () => {
   it('符合指定 2 μm / 3840×2160 / 4 mm 样例', () => {
@@ -34,6 +34,33 @@ describe('光学计算', () => {
     const c = cloneConfig(DEFAULT_CONFIG), camera = new THREE.PerspectiveCamera(optics(c).vfov, optics(c).aspect, 0.05, 100);
     const projectedHeight = (z: number) => Math.abs(new THREE.Vector3(0, 1, -z).project(camera).y - new THREE.Vector3(0, 0, -z).project(camera).y);
     expect(projectedHeight(4)).toBeLessThan(projectedHeight(2));
+  });
+  it('半身人像占比默认约 20.4%，并与 Three.js 投影一致', () => {
+    const c = DEFAULT_CONFIG, o = optics(c);
+    const camera = new THREE.PerspectiveCamera(o.vfov, o.aspect, 0.05, 100);
+    camera.position.set(c.camera.x, c.camera.y, c.camera.z);
+    const yaw = THREE.MathUtils.degToRad(c.camera.yaw), pitch = THREE.MathUtils.degToRad(c.camera.pitch);
+    camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch))));
+    camera.updateProjectionMatrix(); camera.updateMatrixWorld(true);
+    const top = new THREE.Vector3(c.person.x, c.person.height, c.person.z).project(camera);
+    const bottom = new THREE.Vector3(c.person.x, c.person.height - PORTRAIT_HEIGHT, c.person.z).project(camera);
+    const expected = Math.abs(top.y - bottom.y) / 2;
+    const ratio = halfBodyRatio(c);
+    expect(ratio).not.toBeNull();
+    expect(ratio!).toBeCloseTo(expected, 10);
+    expect(ratio!).toBeCloseTo(0.2036, 3);
+  });
+  it('半身人像占比随距离减小、随焦距增大', () => {
+    const near = halfBodyRatio(withDistance(DEFAULT_CONFIG, 2)), far = halfBodyRatio(withDistance(DEFAULT_CONFIG, 5));
+    expect(near).not.toBeNull(); expect(far).not.toBeNull();
+    expect(near!).toBeGreaterThan(far!);
+    const long = cloneConfig(DEFAULT_CONFIG); long.lens.focalLength = 8;
+    expect(halfBodyRatio(long)!).toBeGreaterThan(halfBodyRatio(DEFAULT_CONFIG)!);
+  });
+  it('人物位于相机后方时半身人像占比不可用', () => {
+    const c = cloneConfig(DEFAULT_CONFIG);
+    c.person.x = c.camera.x + 1; c.person.z = c.camera.z + 2;
+    expect(halfBodyRatio(c)).toBeNull();
   });
 });
 
@@ -110,6 +137,7 @@ describe('状态和配置', () => {
     const c = cloneConfig(DEFAULT_CONFIG); c.room.width = 6; c.lens.focalLength = 8; c.distortion = { enabled: true, k1: 0.1 };
     const loaded = JSON.parse(JSON.stringify(c)); expect(validateConfig(loaded)).toBeNull(); expect(loaded).toEqual(c);
     expect(summary(loaded)).toContain('实际焦距：8.00 mm');
+    expect(summary(loaded)).toContain('半身人像占比');
     loaded.output.width = 0; expect(validateConfig(loaded)).toMatch(/output.width/);
     loaded.output.width = 1920; loaded.lens.pixelSize = NaN; expect(validateConfig(loaded)).toMatch(/lens.pixelSize/);
     expect(validateConfig({ version: 99 })).toMatch(/版本/);
