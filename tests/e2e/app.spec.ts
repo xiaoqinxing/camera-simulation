@@ -146,3 +146,18 @@ test('4K 导出与低分辨率预览解耦', async ({ page }) => {
   expect(bytes.readUInt32BE(16)).toBe(3840); expect(bytes.readUInt32BE(20)).toBe(2160);
   expect(bytes.length).toBeGreaterThan(100000);
 });
+
+test('左下角显示版本号并可查看版本历史', async ({ page }) => {
+  await page.goto('/');
+  const trigger = page.getByRole('button', { name: /查看版本历史/ });
+  await expect(trigger).toBeVisible();
+  await expect(trigger).toHaveText(/^v\d+\.\d+\.\d+/);
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: '版本历史' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('每次提交自动递增一次');
+  await expect(dialog.locator('.version-list li').first()).toContainText('当前');
+  expect(await dialog.locator('.version-list li').count()).toBeGreaterThan(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});

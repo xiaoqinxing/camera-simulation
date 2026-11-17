@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { aimAtPerson, CameraWall, cameraWallPose, cloneConfig, Config, DEFAULT_CONFIG, distances, focalFromFov, layoutWarnings, optics, summary, validateConfig, wallCamera, withDistance } from './core';
 import { Assessment, Simulation } from './scene';
+import versionInfo from 'virtual:app-version';
 import '@fontsource-variable/noto-sans-sc';
 import './style.css';
 import './fixes.css';
@@ -44,6 +45,50 @@ function Field({ label, unit, value, min, max, step, onChange, help, integer }: 
     {error && <span className="field-error" role="alert">{error}</span>}
     {help && <span className="field-help">{help}</span>}
   </label>;
+}
+
+function VersionHistory() {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null), panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function close() { setOpen(false); trigger.current?.focus(); }
+    function onKeyDown(event: KeyboardEvent) { if (event.key === 'Escape') close(); }
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Node;
+      if (!panel.current?.contains(target) && !trigger.current?.contains(target)) setOpen(false);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => { document.removeEventListener('keydown', onKeyDown); document.removeEventListener('pointerdown', onPointerDown); };
+  }, [open]);
+  const title = `版本 v${versionInfo.version}，查看版本历史`;
+  const shown = versionInfo.commits.length;
+  return <>
+    <button ref={trigger} type="button" className="version-trigger" aria-haspopup="dialog" aria-expanded={open} aria-label={title} title={title} onClick={() => setOpen(v => !v)}>
+      v{versionInfo.version}<span aria-hidden="true">▴</span>
+    </button>
+    {open && <div ref={panel} className="version-panel" role="dialog" aria-label="版本历史">
+      <div className="version-head">
+        <div><b>版本历史</b><small>每次提交自动递增一次</small></div>
+        <button type="button" className="version-close" aria-label="关闭版本历史" onClick={() => { setOpen(false); trigger.current?.focus(); }}>×</button>
+      </div>
+      <div className="version-current">
+        <strong>v{versionInfo.version}</strong>
+        <span>{versionInfo.commit ? `提交 ${versionInfo.commit}${versionInfo.commitDate ? ` · ${versionInfo.commitDate}` : ''}` : '未读取到 Git 信息'}</span>
+        <small>{versionInfo.commitCount > 0 ? `共 ${versionInfo.commitCount} 次提交${versionInfo.branch ? ` · 分支 ${versionInfo.branch}` : ''}${versionInfo.totalCommits > shown ? ` · 仅显示最近 ${shown} 条` : ''}` : '版本号回退为 package.json 中的值。'}</small>
+      </div>
+      {shown > 0 ? <ol className="version-list">
+        {versionInfo.commits.map((commit, index) => <li key={commit.hash || String(index)}>
+          <span className={`version-tag ${index === 0 ? 'current' : ''}`}>v{commit.version}</span>
+          <div>
+            <p>{commit.subject || '（无提交信息）'}</p>
+            <small>{commit.date}{commit.hash ? ` · ${commit.hash}` : ''}{index === 0 ? ' · 当前' : ''}</small>
+          </div>
+        </li>)}
+      </ol> : <p className="version-empty">没有可显示的提交历史。请从完整的 Git 仓库构建以查看版本记录。</p>}
+    </div>}
+  </>;
 }
 
 function App() {
@@ -183,7 +228,7 @@ function App() {
             <div className="note"><b>预览与导出分离</b> 预览分辨率只影响实时画面；导出的 PNG 使用上方像素尺寸，不受窗口大小影响。4K 导出在集成显卡上可能需要数秒。<br /><br /><b>中心裁切</b> 输出比例不同时裁切有效成像区域，不拉伸画面；导出尺寸受 GPU 渲染缓冲上限限制。</div>
           </>}
         </div>
-        <div className="sidebar-footer"><span className="dot" />参数修改即时生效 <span>v1.0</span></div>
+        <div className="sidebar-footer"><span className="dot" />参数修改即时生效<VersionHistory /></div>
       </aside>
 
       <div className="content">

@@ -24,6 +24,7 @@
 | 🖼 **1080P / 4K 导出** | 预览按窗口自适应，导出按独立分辨率离屏渲染；另有 JSON 配置和 UTF-8 参数摘要。 |
 | 🔒 **本地优先** | 所有计算和导出都在浏览器完成；本地静态包运行时不需要 Node.js，也不访问互联网。 |
 | 🧍 **写实人物资产** | 内置 HSRD-100 全身扫描人物，站姿、真实比例，方便判断构图和遮挡。 |
+| 🏷 **版本与提交历史** | 左下角显示版本号，补丁号随 Git 提交数自动递增；点开即可查看最近提交记录。 |
 
 ---
 
@@ -144,6 +145,7 @@ npm run deploy -- --prune        # 让线上目录与 dist/ 完全一致（执�
 | 摄像机画面 | 按当前镜头参数和输出比例渲染的实时预览，可带畸变黑边。 |
 | 画面分析 | 人物距离、半身人像占比、水平 / 垂直视场角，以及成像和空间关系明细。 |
 | 保存与分享 | 保存 / 加载配置、导出参数摘要、导出 PNG 截图。 |
+| 版本信息 | 左下角显示 `v主.次.补丁`，点击展开构建时的提交历史；补丁号等于构建时的提交总数。 |
 
 ---
 
@@ -278,16 +280,18 @@ src/style.css        界面样式
 public/assets/       写实人物 GLB
 public/licenses/     人物、字体及第三方许可
 scripts/deploy.sh    构建产物部署脚本（手动部署）
+scripts/version.mjs  读取 Git 提交并生成版本号与提交历史
 .github/workflows/   CI、GitHub Pages 与自有站点自动部署
 scripts/optimize-model.mjs  人物模型压缩与纹理重编码
 tests/core.test.ts   Vitest 计算测试
+tests/version.test.ts 版本号递增与回退测试
 tests/e2e/app.spec.ts Playwright 浏览器测试
 ```
 
 ### 测试
 
 ```bash
-npm run test       # 计算与配置测试
+npm run test       # 计算、配置与版本号测试
 npm run test:e2e   # 浏览器端测试，需要 Playwright Chromium
 ```
 
