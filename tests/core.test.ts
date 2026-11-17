@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { aimAtPerson, CAMERA_WALL_INSET, CAMERA_WALL_TOP_GAP, cameraWallPose, cloneConfig, DEFAULT_CONFIG, distances, focalFromFov, fovFromSize, halfBodyRatio, optics, PORTRAIT_HEIGHT, personFacingAngle, summary, validateConfig, wallCamera, withDistance } from '../src/core';
+import { aimAtPerson, CAMERA_WALL_INSET, CAMERA_WALL_TOP_GAP, cameraWallPose, cloneConfig, DEFAULT_CONFIG, distances, distortionMetrics, focalFromFov, fovFromSize, halfBodyRatio, optics, PORTRAIT_HEIGHT, personFacingAngle, summary, validateConfig, wallCamera, withDistance } from '../src/core';
 
 describe('光学计算', () => {
   it('符合指定 2 μm / 3840×2160 / 4 mm 样例', () => {
@@ -61,6 +61,30 @@ describe('光学计算', () => {
     const c = cloneConfig(DEFAULT_CONFIG);
     c.person.x = c.camera.x + 1; c.person.z = c.camera.z + 2;
     expect(halfBodyRatio(c)).toBeNull();
+  });
+});
+
+describe('畸变参数换算', () => {
+  it('关闭畸变时各项均为 0', () => {
+    const dm = distortionMetrics(DEFAULT_CONFIG);
+    expect(dm.enabled).toBe(false);
+    expect(dm.opticalCorner).toBe(0); expect(dm.tvLongEdge).toBe(0);
+  });
+  it('由 k1 推算光学畸变与 TV 畸变', () => {
+    const c = cloneConfig(DEFAULT_CONFIG); c.distortion = { enabled: true, k1: 0.1 };
+    const dm = distortionMetrics(c);
+    // x = 7.68 / 8 = 0.96, y = 4.32 / 8 = 0.54
+    expect(dm.opticalCorner).toBeCloseTo(0.1 * (0.96 ** 2 + 0.54 ** 2), 10);
+    expect(dm.opticalLongEdge).toBeCloseTo(0.1 * 0.96 ** 2, 10);
+    expect(dm.tvLongEdge).toBeCloseTo(0.1 * 0.96 ** 2 / 2, 10);
+    expect(dm.smiaTvLongEdge).toBeCloseTo(dm.tvLongEdge * 2, 10);
+  });
+  it('负值 k1 得到负的桶形畸变，且换算随焦距变化', () => {
+    const barrel = cloneConfig(DEFAULT_CONFIG); barrel.distortion = { enabled: true, k1: -0.1 };
+    expect(distortionMetrics(barrel).opticalCorner).toBeLessThan(0);
+    expect(distortionMetrics(barrel).tvLongEdge).toBeLessThan(0);
+    const tele = cloneConfig(barrel); tele.lens.focalLength = 8;
+    expect(Math.abs(distortionMetrics(tele).opticalCorner)).toBeLessThan(Math.abs(distortionMetrics(barrel).opticalCorner));
   });
 });
 
@@ -138,6 +162,7 @@ describe('状态和配置', () => {
     const loaded = JSON.parse(JSON.stringify(c)); expect(validateConfig(loaded)).toBeNull(); expect(loaded).toEqual(c);
     expect(summary(loaded)).toContain('实际焦距：8.00 mm');
     expect(summary(loaded)).toContain('半身人像占比');
+    expect(summary(loaded)).toContain('TV 畸变（长边）');
     loaded.output.width = 0; expect(validateConfig(loaded)).toMatch(/output.width/);
     loaded.output.width = 1920; loaded.lens.pixelSize = NaN; expect(validateConfig(loaded)).toMatch(/lens.pixelSize/);
     expect(validateConfig({ version: 99 })).toMatch(/版本/);

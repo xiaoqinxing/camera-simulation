@@ -77,6 +77,34 @@ export function optics(c: Config) {
   };
 }
 
+/**
+ * Distortion percentages derived from the preview model r' = r + k1·r³,
+ * where r is the ideal (pinhole) image radius normalised by focal length,
+ * i.e. r = imageHeight / focalLength = tan(field angle).
+ * Returned values are fractions: multiply by 100 for percent.
+ *   optical: (r' - r) / r = k1·r² (radial/geometric distortion at that field).
+ *   tv: traditional RIAA/ISO TV distortion, edge sag divided by frame size.
+ */
+export function distortionMetrics(c: Config) {
+  const o = optics(c), f = c.lens.focalLength;
+  const k1 = c.distortion.enabled ? c.distortion.k1 : 0;
+  const x = o.width / (2 * f), y = o.height / (2 * f);
+  const corner2 = x * x + y * y;
+  const long2 = Math.max(x, y) ** 2;
+  const tvLongEdge = k1 * long2 / 2;
+  return {
+    enabled: c.distortion.enabled,
+    k1,
+    // Maximum-field optical distortion, at the image corner.
+    opticalCorner: k1 * corner2,
+    // Optical distortion at the mid-point of the long edge.
+    opticalLongEdge: k1 * long2,
+    // Traditional TV distortion on the long edge; SMIA is twice as large.
+    tvLongEdge,
+    smiaTvLongEdge: tvLongEdge * 2,
+  };
+}
+
 export function distances(c: Config) {
   const horizontal = Math.hypot(c.person.x - c.camera.x, c.person.z - c.camera.z);
   return { horizontal, spatial: Math.hypot(horizontal, c.person.height / 2 - c.camera.y) };
@@ -181,7 +209,8 @@ export function layoutWarnings(c: Config): string[] {
 }
 
 export function summary(c: Config, status = ''): string {
-  const o = optics(c), d = distances(c), p = halfBodyRatio(c), n = (x: number) => x.toFixed(2);
+  const o = optics(c), d = distances(c), dm = distortionMetrics(c), p = halfBodyRatio(c), n = (x: number) => x.toFixed(2);
+  const pct = (x: number) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(2)}%`;
   return [
     '镜界 · 摄像机效果仿真参数摘要', '用途：演示与初步选型；理论值不等于真实实测值。', '',
     `房间（长×宽×高）：${c.room.length} × ${c.room.width} × ${c.room.height} m`,
@@ -196,7 +225,7 @@ export function summary(c: Config, status = ''): string {
     `中心裁切后成像尺寸：${n(o.width)} × ${n(o.height)} mm`,
     `画面无畸变理论视场角：水平 ${n(o.hfov)}°、垂直 ${n(o.vfov)}°、对角 ${n(o.dfov)}°`,
     `完整有效区域视场角：水平 ${n(o.fullHfov)}°、垂直 ${n(o.fullVfov)}°`,
-    `畸变：${c.distortion.enabled ? `简化径向 k1=${c.distortion.k1}，采样越界为黑边` : '关闭'}`,
+    `畸变：${c.distortion.enabled ? `简化径向 k1=${c.distortion.k1}；光学畸变（画面角落）${pct(dm.opticalCorner)}，TV 畸变（长边）${pct(dm.tvLongEdge)}；采样越界为黑边` : '关闭'}`,
     status ? `人物画面评估：${status}` : '',
     '限制：未模拟真实镜头标定、ISP、噪声、动态范围、景深和自动曝光/白平衡。',
   ].filter(Boolean).join('\n') + '\n';

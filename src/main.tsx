@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { aimAtPerson, CameraWall, cameraWallPose, cloneConfig, Config, DEFAULT_CONFIG, distances, focalFromFov, layoutWarnings, optics, summary, validateConfig, wallCamera, withDistance } from './core';
+import { aimAtPerson, CameraWall, cameraWallPose, cloneConfig, Config, DEFAULT_CONFIG, distances, distortionMetrics, focalFromFov, layoutWarnings, optics, summary, validateConfig, wallCamera, withDistance } from './core';
 import { Assessment, Simulation } from './scene';
 import versionInfo from 'virtual:app-version';
 import '@fontsource-variable/noto-sans-sc';
@@ -16,6 +16,7 @@ const WALLS: Array<{ id: CameraWall; label: string }> = [
   { id: 'right', label: '右墙' },
 ];
 const pretty = (v: number, n = 2) => Number.isFinite(v) ? v.toFixed(n) : '—';
+const percent = (v: number) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob), a = document.createElement('a');
   a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 2000);
@@ -104,6 +105,7 @@ function App() {
   const simulation = useRef<Simulation | null>(null), fileInput = useRef<HTMLInputElement>(null);
   const initial = useRef(config);
   const o = useMemo(() => optics(config), [config]);
+  const dm = useMemo(() => distortionMetrics(config), [config]);
   const d = useMemo(() => distances(config), [config]);
   const warnings = useMemo(() => layoutWarnings(config), [config]);
   const localHost = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(window.location.hostname);
@@ -221,6 +223,11 @@ function App() {
             <Field label="画面垂直视场角" unit="°" value={o.vfov} min={1} max={169} step={0.1} onChange={v => fov('v', v)} />
             <div className="separator" /><div className="switch-row"><div><b>镜头畸变</b><small>简化径向模型，非实测标定</small></div><button role="switch" aria-label="镜头畸变" aria-checked={config.distortion.enabled} className={`switch ${config.distortion.enabled ? 'on' : ''}`} onClick={() => setDistortion('enabled', !config.distortion.enabled)}><span /></button></div>
             <Field label="径向畸变 k1" value={config.distortion.k1} min={-0.35} max={0.35} step={0.005} onChange={v => setDistortion('k1', v)} help="负值桶形，正值枕形；采样越界显示黑边。" />
+            <div className="distortion-metrics" aria-label="等效畸变参数">
+              <div><span>光学畸变（画面角落）</span><b>{percent(dm.opticalCorner)}</b></div>
+              <div><span>TV 畸变（长边）</span><b>{percent(dm.tvLongEdge)}</b></div>
+            </div>
+            <div className="field-help">由 r′ = r(1 + k1·r²) 推算：光学畸变 = k1·r²，TV 畸变为长边弯曲量与画幅之比；关闭时按 0 计算。负值桶形、正值枕形，非实测标定。</div>
           </>}
           {active === 'output' && <><div className="control-title"><h3>输出设置</h3><p>预览随窗口自适应；导出截图按下方分辨率单独离线渲染。</p></div>
             {field('output', 'width', '导出宽度', 'px', 256, 4096, 1, undefined, true)}{field('output', 'height', '导出高度', 'px', 256, 4096, 1, undefined, true)}
@@ -240,7 +247,7 @@ function App() {
           </section>
           <section className="view-card"><div className="view-head"><div><span className="view-icon">◉</span><div><b>摄像机画面</b><small>CAMERA PREVIEW</small></div></div><span className="live-label"><i /> LIVE</span></div>
             <div className="camera-stage" ref={stage}><div className="view-surface camera-surface" ref={cameraView} style={{ width: Math.min(stageSize.width, stageSize.height * o.aspect), height: Math.min(stageSize.height, stageSize.width / o.aspect) }} aria-label="摄像机画面视图"><div className="view-overlay top-left"><span className="rec-dot" /> CAM 01 · 预览</div><div className="view-overlay bottom-right">导出 {config.output.width} × {config.output.height}</div></div></div>
-            <div className="view-foot"><span><i className="legend-circle" /> {config.distortion.enabled ? `畸变开启 · k1 ${config.distortion.k1}` : '无畸变透视'}</span><span>画面比例 {pretty(o.aspect, 2)}:1</span></div>
+            <div className="view-foot"><span><i className="legend-circle" /> {config.distortion.enabled ? `畸变开启 · k1 ${config.distortion.k1} · TV ${percent(dm.tvLongEdge)}` : '无畸变透视'}</span><span>画面比例 {pretty(o.aspect, 2)}:1</span></div>
           </section>
         </div>
 
@@ -257,6 +264,7 @@ function App() {
             <div><dt>有效成像像素</dt><dd>{config.lens.sensorWidth} × {config.lens.sensorHeight} px</dd></div><div><dt>有效成像尺寸</dt><dd>{pretty(o.sensorW)} × {pretty(o.sensorH)} mm</dd></div>
             <div><dt>裁切后成像尺寸</dt><dd>{pretty(o.width)} × {pretty(o.height)} mm</dd></div><div><dt>完整区域视场角 H / V</dt><dd>{pretty(o.fullHfov, 1)}° / {pretty(o.fullVfov, 1)}°</dd></div>
             <div><dt>输出分辨率 / 比例</dt><dd>{config.output.width} × {config.output.height} / {pretty(o.aspect)}:1</dd></div><div><dt>画面对角视场角</dt><dd>{pretty(o.dfov, 1)}°</dd></div>
+            <div><dt>光学畸变（画面角落）</dt><dd>{percent(dm.opticalCorner)}</dd></div><div><dt>TV 畸变（长边）</dt><dd>{percent(dm.tvLongEdge)}</dd></div>
           </dl></section>
           <section className="detail-card"><div className="detail-head"><h3>空间关系</h3><span>SPATIAL</span></div><dl>
             <div><dt>人物身高</dt><dd>{pretty(config.person.height)} m</dd></div><div><dt>人物位置 X / Z</dt><dd>{pretty(config.person.x)} / {pretty(config.person.z)} m</dd></div>

@@ -124,6 +124,9 @@ test('房间变化、4:3 裁切、手动角度和畸变恢复', async ({ page })
   const k = page.getByRole('spinbutton', { name: '径向畸变 k1' }); await k.fill('0.1'); await k.press('Enter');
   await page.getByRole('switch', { name: '镜头畸变' }).click();
   await expect(page.getByText(/畸变开启 · k1 0\.1/)).toBeVisible();
+  // Derived readouts appear in both the lens panel and the optics detail card.
+  await expect(page.getByText('+12.13%', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('+4.61%', { exact: true }).first()).toBeVisible();
   const distorted = await shot(); expect(distorted.equals(baseline)).toBe(false);
   await k.fill('-0.1'); await k.press('Enter');
   const barrel = await shot(); expect(barrel.equals(baseline)).toBe(false); expect(barrel.equals(distorted)).toBe(false);
